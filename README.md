@@ -1,6 +1,6 @@
 # BGP Guard
 
-**BGP Guard** is a [BIRD](https://bird.network.cz/) route server that publishes the IP prefixes of popular services and countries over BGP, tagged with large communities. Your router peers with it, picks the groups it needs by community, and routes that traffic however you like, for example through a VPN tunnel. The app is ditributed as a Docker image.
+**BGP Guard** is a [BIRD](https://bird.network.cz/) route server that publishes the IP prefixes of popular services and countries over BGP, tagged with large communities. Your router peers with it, picks the groups it needs by community, and routes that traffic however you like, for example through a VPN tunnel. The app is distributed as a Docker image.
 
 - Prefixes of 30+ services (Google, Microsoft, Amazon, Cloudflare, Telegram, …) grouped by the AS numbers they announce from
 - Prefixes of countries, selectable from the full ISO 3166-1 list
@@ -80,7 +80,7 @@ Routes carry [large communities](https://www.rfc-editor.org/rfc/rfc8092) in the 
 | 200 | Facebook       | 310 | Mullvad        |     |                |
 | 210 | Fastly         | 320 | Netflix        |     |                |
 
-The Microsoft group includes its subsidiaries (GitHub, LinkedIn, Skype, Activision Blizzard, ZeniMax).
+The Microsoft group includes its subsidiaries (GitHub, LinkedIn, Skype, Activision Blizzard, ZeniMax). The YouTube AS numbers are only in the YouTube group, not in Google.
 
 ### Countries
 
@@ -111,11 +111,12 @@ Both files have one group per line, `ID Name items`:
 ```
 
 - `#` starts a comment, either on its own line or after an entry.
-- `Name` may only contain letters, digits and `_`, and must be unique across both files.
+- `Name` may only contain letters, digits and `_`, and must be unique across both files, ignoring case (`Google` and `google` clash).
 - IDs are numbers from 0 to 4294967295; `100` in `as.mapping.txt` is taken by custom static routes.
+- Items are separated by commas without spaces; AS numbers are from 1 to 4294967295.
 - IDs in `iso.mapping.txt` are by convention the ISO 3166-1 numeric codes for single countries, and 1000 or higher for groups of countries.
 
-Changes are applied on the next update, or immediately after `docker restart guard`.
+Changes are applied on the next update, or immediately after `docker restart guard`. If a line breaks these rules, the update stops with an error naming the file and line, and the routes already loaded stay in place.
 
 ### Custom routes
 
@@ -146,7 +147,7 @@ The files in [bgp.conf.d](bird/bgp.conf.d/) open sessions to these providers:
 
 Their routes are kept in separate tables that you can browse in the looking glass; they are not passed on to your peers. Each route keeps the provider's own communities (listed at the top of each file) and gets `65000:<provider AS>:0`.
 
-Mount an empty file over one to disable it. To add a provider, copy one of the files, rename the `afd` suffix throughout, and set `asn_*` and `ip4_*` at the top to the provider's AS number and address.
+Mount an empty file over one to disable it. To add a provider, copy one of the files, replace its suffix (`afd`, `afn` or `ref`) throughout with a new one, and set `asn_*` and `ip4_*` at the top to the provider's AS number and address.
 
 ## How it works
 
@@ -157,9 +158,11 @@ The container runs [supervisord](http://supervisord.org/) with four programs:
 | `bird`     | The BGP server                                                                        |
 | `updater`  | Every 24 hours runs [ipverse.sh](bird/ipverse.sh), which downloads the prefix lists and generates BIRD config, then reloads BIRD; retries every 5 minutes on failure |
 | `proxy`    | Looking glass backend, talks to BIRD (listens on `127.0.0.1:8000` only)               |
-| `frontend` | Looking glass web interface on port 80, built from the [vnxme/bird-lg-go](https://github.com/vnxme/bird-lg-go/tree/fix-truncated-routes) fork (branch `fix-truncated-routes`) |
+| `frontend` | Looking glass web interface on port 80                                                |
 
-[bgptools.sh](bird/bgptools.sh) is an alternative generator that uses the [bgp.tools](https://bgp.tools) routing table instead of ipverse; it is included but not run by default.
+The looking glass programs are both built from the [vnxme/bird-lg-go](https://github.com/vnxme/bird-lg-go/tree/fix-truncated-routes) fork (branch `fix-truncated-routes`).
+
+[bgptools.sh](bird/bgptools.sh) is an alternative generator for the AS groups that uses the [bgp.tools](https://bgp.tools) routing table instead of ipverse. It reads only `as.mapping.txt`, so it does not produce the country groups, and it is included but not run by default.
 
 All logs go to `docker logs`. The Docker health check reports whether BIRD is responding.
 
